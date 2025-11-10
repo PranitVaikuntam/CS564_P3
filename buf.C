@@ -98,6 +98,7 @@ const Status BufMgr::allocBuf(int & frame)
             // Clear the refbit and move on
             currFrame->refbit = false;
             numScanned++;
+            bufStats.accesses++;
             continue;
         }
         
@@ -134,113 +135,110 @@ const Status BufMgr::allocBuf(int & frame)
 	
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page)
 {
-    int frameNo = 0; // holds the frame number
+    int frameNo = 0; 
+    Status lookupStatus = hashTable->lookup(file, PageNo, frameNo); 
 
-    // CASE 1: When Page is NOT in the buffer pool
-    // checks if the page is in the buffer pool, if (hash table) not found...
-    Status lookupStatus = hashTable->lookup(file, PageNo, frameNo);
-    bufStats.accesses++;
-
+    // CASE 1: When page is not in the buffer pool
     if (lookupStatus == HASHNOTFOUND){
-        lookupStatus = allocBuf(frameNo); // finds and allocates a buffer frame 
-        // checks if the allocation was successful...
+
+        //Allocates a buffer frame
+        lookupStatus = allocBuf(frameNo); 
         if(lookupStatus!=OK){
-            return lookupStatus; // otherwise returns status error: BUFFEREXCEEDED, UNIXERR, or HASHTBLERROR
+            return lookupStatus; 
         }
 
-        // checks if the page is read into buffer pool...
+        //Check if page is in buffer pool
         Status readStatus = file->readPage(PageNo, &(bufPool[frameNo]));
         if(readStatus != OK){
-            return readStatus;// otherwise, returns status error: UNIXERR 
+            return readStatus;
         }
         bufStats.diskreads++;
 
 
-        // checks if the page is inserted into the hash table...
+        //Insert page into hashtable
         Status insertStatus = hashTable->insert(file, PageNo, frameNo);
         if(insertStatus != OK){
-            return insertStatus; //otherwise, returns status error: HASHTBLERROR
+            return insertStatus; 
         }
 
-        // sets the frame's file, page num, pinCnt, diry, valid, and refbit appropriately (descriptions)
+        //Edit the corresponding frame
         bufTable[frameNo].Set(file, PageNo);
 
-        // returns a pointer to the frame containing the page using page parameter
+        ////page points to the frame used and will be returned
         page = &(bufPool[frameNo]);
-        return OK; // returns OK
+        return OK;
 
-    // CASE 2: When Page IS in the buffer pool...
-    } else if (lookupStatus == OK){ // checks if page is in buffer pool, then...
-        BufDesc &currFrame = bufTable[frameNo]; // retrieves buffer frame bits
-        // ... and set refbit and pinCnt appropriately, then ...
+    // CASE 2: When page is in the buffer pool...
+    } else if (lookupStatus == OK){ 
+        //Edit the corresponding frame
+        BufDesc &currFrame = bufTable[frameNo]; 
         currFrame.refbit = true;
         currFrame.pinCnt++;
-        // returns a pointer to the frame containing the page using page parameter 
+        
+        //page points to the frame used and will be returned
         page = &(bufPool[frameNo]);
         return OK; 
     }
-    return lookupStatus; // otherwise, returns status error if not OK
+    return lookupStatus; //Shouldn't reach here. Return lookup status
 }
 
 
 const Status BufMgr::unPinPage(File* file, const int PageNo, 
 			       const bool dirty) 
 {
-    int frameNo = 0; // holds the frame number
-
-    // checks if the page is in the buffer pool...
+    //Looks up up the page in the hash table
+    //The page should be in the table
+    int frameNo = 0;
     Status lookupStatus = hashTable->lookup(file, PageNo, frameNo);
     if(lookupStatus != OK){
-        return lookupStatus; // otherwise returns status error: HASHNOTFOUND
+        return lookupStatus; 
     }
 
-    BufDesc &currFrame = bufTable[frameNo]; // retrieves buffer frame bits
+    //Get the corresponding frame
+    BufDesc &currFrame = bufTable[frameNo]; 
 
-    // checks if pinCnt is greater than 0...
+    //Decrement pin count if greater than 0
     if(currFrame.pinCnt <= 0){
-        return PAGENOTPINNED; // otherwise returns status error: PAGENOTPINNED
+        return PAGENOTPINNED; 
     }
-
-    // decrements pinCnt
     currFrame.pinCnt--;
 
-    // sets dirty bit appropriately
+    //Set dirty bit if necessary
     if(dirty){
         currFrame.dirty = true;
     }
 
-    return OK; // returns OK
+    return OK; 
 }
 
 const Status BufMgr::allocPage(File* file, int& pageNo, Page*& page) 
 {
-    // allocates a new page in the file
+    //Allocates a new page in the file
     Status allocStatus = file->allocatePage(pageNo);
     if(allocStatus != OK){
-        return allocStatus; // otherwise returns status error: UNIXERR
+        return allocStatus; 
     }
 
-    int frameNo = 0; // holds the frame number
-
-    // allocates a buffer frame
+    //Allocates a buffer frame
+    int frameNo = 0;
     Status bufAllocStatus = allocBuf(frameNo);
     if(bufAllocStatus != OK){
-        return bufAllocStatus; // otherwise returns status error: BUFFEREXCEEDED, UNIXERR, or HASHTBLERROR
+        return bufAllocStatus; 
     }
 
-    // inserts the (file, pageNo) into the hash table
+    //Inserts the page into the hash table
+    //PageNo is edited and will be returned
     Status insertStatus = hashTable->insert(file, pageNo, frameNo);
     if(insertStatus != OK){
-        return insertStatus; // otherwise returns status error: HASHTBLERROR
+        return insertStatus; 
     }
 
-    // sets the frame's file, page num, pinCnt, diry, valid, and refbit appropriately (descriptions)
+    //Edit the corresponding frame
     bufTable[frameNo].Set(file, pageNo);
 
-    // returns a pointer to the frame containing the page using page parameter
+    //page points to the frame used and will be returned
     page = &(bufPool[frameNo]);
-    
-    return OK; // returns OK
+    return OK;
 }
 
 const Status BufMgr::disposePage(File* file, const int pageNo) 
