@@ -1,0 +1,12 @@
+Jesse Mendez: mendez6@wisc.edu
+Parth Aditya: paditya2@wisc.edu
+Pranit Vaikuntam: vaikuntam@wisc.edu
+
+
+Parth completed allocBuf() function
+Jesse completed readPage() function 
+Pranit completed unPinPage() & allocPage() functions
+
+Each group member roughly contributed equally of the overall work. A doc was created to share our function codes w/inline comments. We all verified our code (functions) to ensure all test passed between all members. 
+
+

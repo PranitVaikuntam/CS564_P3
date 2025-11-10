@@ -65,71 +65,63 @@ BufMgr::~BufMgr() {
 
 const Status BufMgr::allocBuf(int & frame) 
 {
-    // Implementation of the clock algorithm to find a free frame
-    // We need to scan the buffer pool to find a frame to allocate
-    
+
+    // keeps track of frames visited
     unsigned int numScanned = 0;
     
-    // Keep scanning until we've gone around the clock twice
-    // This ensures we give every frame a chance even if refbits are set
+    // Uses clock algorithm to search buffer pool 2x for a free frame, or to decide which page to replace for a free frame
     while (numScanned < 2 * numBufs) {
-        // Advance the clock hand
+
+        // advances the clock pointer
         advanceClock();
         
+        // references the current frame the clock hand is pointering atm
         BufDesc* currFrame = &bufTable[clockHand];
         
-        // Case 1: Frame is not valid (empty/unused frame)
+        // ensures that frame has NO valid page (invalid)...
         if (!currFrame->valid) {
-            // Found an empty frame - we can use it immediately
-            frame = clockHand;
-            return OK;
+            frame = clockHand; //...then set frame to current clock pointer to be used
+            return OK; 
         }
         
-        // Case 2: Frame is valid, check if it's pinned
+        // ensures that the frame is not pinned (no active users)....
         if (currFrame->pinCnt > 0) {
-            // Page is pinned, can't evict it, skip to next frame
-            numScanned++;
-            continue;
+            numScanned++; // increments frames to indicated visited
+            continue; // ...then skips to next frame
         }
         
-        // Case 3: Frame is valid and not pinned, check refbit
+        // ensures the refeneced bit is false (not recently accessed)...
         if (currFrame->refbit) {
-            // Recently referenced - give it another chance
-            // Clear the refbit and move on
-            currFrame->refbit = false;
-            numScanned++;
-            bufStats.accesses++;
-            continue;
+            bufStats.accesses++; //increments BufStats accesses when frame is now accessed 
+            currFrame->refbit = false; // sets reference bit from true to false = recently accessed
+            numScanned++; // incremets frame visitation
+            continue; // then skips to next frame
         }
         
-        // Case 4: Found a victim frame!
-        // refbit is false (not recently referenced) and not pinned
-        
-        // If the page is dirty, write it back to disk before evicting
+        // ensures that the page copy is in sync in both buffer pool and in disk
+        // So, if page is already in frame of bufferpool (dirty)....
         if (currFrame->dirty) {
+            // ...then buffer manager frees the frame by writing page in frame to disk
             Status status = currFrame->file->writePage(currFrame->pageNo, &bufPool[clockHand]);
+            // checks if write status was successfuk
             if (status != OK) {
-                return UNIXERR;
+                return UNIXERR; // ...if not, return UNIXERR error
             }
-            bufStats.diskwrites++;
+            bufStats.diskwrites++; // ...otherwise if diskwrite was OK, then incremets bufStats writes
         }
         
-        // Remove the old page from the hash table
-        Status status = hashTable->remove(currFrame->file, currFrame->pageNo);
+        // ..Finally when page not dirty, frame has valid page, and not pinned...
+        Status status = hashTable->remove(currFrame->file, currFrame->pageNo); /// then removes page from hash table
+        // ensures that removal of page was succeded
         if (status != OK) {
-            return HASHTBLERROR;
+            return HASHTBLERROR; // ...otherwsie returns error
         }
         
-        // Clear the frame descriptor for the new page
-        currFrame->Clear();
-        
-        // Return the frame number
-        frame = clockHand;
-        return OK;
+        currFrame->Clear(); //...then frame is cleared 
+        frame = clockHand; // and sets frame to current clock pointer
+        return OK; // DONE
     }
-    
-    // If we've scanned twice around and all frames are pinned
-    return BUFFEREXCEEDED;
+        return BUFFEREXCEEDED; // otherwise returns error when all buffer frames are pinned
 }
 
 	
